@@ -1,0 +1,285 @@
+openapi: 3.0.3
+info:
+  title: Mira API v1
+  description: Spécification officielle de l'API REST de gestion de mémoire personnelle Mira. Toutes les réponses respectent une enveloppe JSON stable.
+  version: 1.0.0
+servers:
+  - url: http://localhost:8080/api/v1
+    description: Serveur local par défaut
+paths:
+  /notes:
+    post:
+      summary: Créer une note
+      description: Crée une nouvelle note persistant dans le fichier JSON Lines local.
+      operationId: createNote
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotePayload'
+      responses:
+        '201':
+          description: Note créée avec succès
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NoteResponse'
+        '400':
+          description: Requête incorrecte (JSON malformé ou validation en échec)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    get:
+      summary: Lister les notes
+      description: Récupère la liste des notes triées par ordre décroissant (plus récentes en premier) avec support de pagination.
+      operationId: listNotes
+      parameters:
+        - name: limit
+          in: query
+          description: Nombre maximum de notes à renvoyer
+          required: false
+          schema:
+            type: integer
+            default: 10
+        - name: offset
+          in: query
+          description: Nombre d'entrées à sauter
+          required: false
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: Liste des notes récupérée avec succès
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NoteListResponse'
+
+  /notes/{id}:
+    get:
+      summary: Récupérer une note par son ID
+      description: Recherche une note spécifique dans le fichier local via son identifiant int64.
+      operationId: getNoteById
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: L'ID numérique (int64) unique de la note
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Note trouvée
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NoteResponse'
+        '400':
+          description: ID invalide ou non convertible en entier
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Note introuvable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    patch:
+      summary: Mettre à jour partiellement une note
+      description: Modifie le titre ou le contenu d'une note existante et met à jour le timestamp de modification.
+      operationId: patchNote
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: L'ID numérique (int64) unique de la note
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotePatchPayload'
+      responses:
+        '200':
+          description: Note mise à jour avec succès
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NoteResponse'
+        '404':
+          description: Note introuvable pour modification
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      summary: Supprimer une note
+      description: Supprime définitivement la note correspondant à l'ID donné et réorganise le fichier.
+      operationId: deleteNote
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: L'ID numérique (int64) unique de la note
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Note supprimée avec succès
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '404':
+          description: Note introuvable pour suppression
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /search:
+    get:
+      summary: Recherche textuelle dans les notes
+      description: Filtre toutes les notes contenant le terme recherché de manière insensible à la casse dans le titre ou le contenu.
+      operationId: searchNotes
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: Le terme textuel de recherche
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Résultats de recherche renvoyés
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NoteSearchResponse'
+        '400':
+          description: Paramètre de recherche q manquant ou vide
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    NotePayload:
+      type: object
+      required:
+        - title
+      properties:
+        title:
+          type: string
+          example: "Développement Go Modules"
+        content:
+          type: string
+          example: "Rappel sur go mod tidy et l outillage."
+    NotePatchPayload:
+      type: object
+      properties:
+        title:
+          type: string
+          example: "Titre modifié"
+        content:
+          type: string
+          example: "Contenu partiel mis à jour"
+    Note:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1715421516235612344
+        title:
+          type: string
+          example: "Développement Go Modules"
+        content:
+          type: string
+          example: "Rappel sur go mod tidy et l outillage."
+        created_at:
+          type: string
+          format: date-time
+          example: "2026-07-13T14:00:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          example: "2026-07-13T14:05:00Z"
+    NoteResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          $ref: '#/components/schemas/Note'
+    NoteListResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Note'
+        meta:
+          type: object
+          properties:
+            total:
+              type: integer
+              example: 42
+            limit:
+              type: integer
+              example: 10
+            offset:
+              type: integer
+              example: 0
+    NoteSearchResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Note'
+        meta:
+          type: object
+          properties:
+            count:
+              type: integer
+              example: 3
+    MessageResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          properties:
+            message:
+              type: string
+              example: "Note supprimée"
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: string
+          example: "Note introuvable"

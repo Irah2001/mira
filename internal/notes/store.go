@@ -6,7 +6,7 @@ var ErrNotFound = errors.New("note non trouvée")
 
 // NoteStore définit les opérations requises pour gérer le stockage des notes.
 type NoteStore interface {
-	Add(note Note) error
+	Add(note *Note) error
 	List(limit int) ([]Note, error)
 	GetAll() ([]Note, error)
 	GetByID(id int64) (Note, error)

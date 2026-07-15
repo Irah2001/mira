@@ -5,27 +5,40 @@ import (
 )
 
 type Note struct {
-	ID        int64     `json:"id"`
-	Title     string    `json:"title"`
-	Content   string    `json:"content"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID               int64     `json:"id"`
+	Title            string    `json:"title"`
+	Content          string    `json:"content"`
+	Tags             []string  `json:"tags"`
+	EnrichmentStatus string    `json:"enrichment_status"` // "pending", "done", "failed"
+	Summary          *string   `json:"summary,omitempty"`
+	Score            int       `json:"score"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
 }
 
-func NewNote(title, content string) Note {
+func NewNote(title, content string, tags []string) *Note {
 	now := time.Now()
-	return Note{
-		ID:        now.UnixNano(),
-		Title:     title,
-		Content:   content,
-		CreatedAt: now,
-		UpdatedAt: now,
+
+	if tags == nil {
+		tags = []string{}
+	}
+
+	return &Note{
+		ID:               now.UnixNano(),
+		Title:            title,
+		Content:          content,
+		Tags:             tags,
+		EnrichmentStatus: "pending",
+		Score:            0,
+		CreatedAt:        now,
+		UpdatedAt:        now,
 	}
 }
 
 type NotePayload struct {
-	Title   *string `json:"title"`
-	Content *string `json:"content"`
+	Title   *string  `json:"title"`
+	Content *string  `json:"content"`
+	Tags    []string `json:"tags"`
 }
 
 func (p NotePayload) Validate() map[string]string {

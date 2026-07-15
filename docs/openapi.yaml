@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Mira API v1
-  description: Spécification officielle de l'API REST de gestion de mémoire personnelle Mira. Toutes les réponses respectent une enveloppe JSON stable.
+  description: Spécification officielle de l'API REST de gestion de mémoire personnelle Mira. Propulsée par PostgreSQL avec traitement asynchrone. Toutes les réponses respectent une enveloppe JSON stable.
   version: 1.0.0
 servers:
   - url: http://localhost:8080/api/v1
@@ -10,7 +10,7 @@ paths:
   /notes:
     post:
       summary: Créer une note
-      description: Crée une nouvelle note persistant dans le fichier JSON Lines local.
+      description: Crée une nouvelle note dans la base de données PostgreSQL. Déclenche automatiquement un processus d'enrichissement asynchrone en arrière-plan (tags, résumé, score).
       operationId: createNote
       requestBody:
         required: true
@@ -20,7 +20,7 @@ paths:
               $ref: '#/components/schemas/NotePayload'
       responses:
         '201':
-          description: Note créée avec succès
+          description: Note créée avec succès (statut initialisé à 'pending')
           content:
             application/json:
               schema:
@@ -33,7 +33,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
     get:
       summary: Lister les notes
-      description: Récupère la liste des notes triées par ordre décroissant (plus récentes en premier) avec support de pagination.
+      description: Récupère la liste des notes depuis la base de données, triées par ordre décroissant (plus récentes en premier) avec support de la pagination.
       operationId: listNotes
       parameters:
         - name: limit
@@ -61,7 +61,7 @@ paths:
   /notes/{id}:
     get:
       summary: Récupérer une note par son ID
-      description: Recherche une note spécifique dans le fichier local via son identifiant int64.
+      description: Recherche une note spécifique (et ses tags agrégés) dans la base de données via son identifiant int64.
       operationId: getNoteById
       parameters:
         - name: id
@@ -92,7 +92,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
     patch:
       summary: Mettre à jour partiellement une note
-      description: Modifie le titre ou le contenu d'une note existante et met à jour le timestamp de modification.
+      description: Modifie le titre, le contenu ou les tags d'une note existante et met à jour le timestamp de modification.
       operationId: patchNote
       parameters:
         - name: id
@@ -123,7 +123,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
     delete:
       summary: Supprimer une note
-      description: Supprime définitivement la note correspondant à l'ID donné et réorganise le fichier.
+      description: Supprime définitivement la note dans PostgreSQL (le nettoyage des tags orphelins est géré en cascade).
       operationId: deleteNote
       parameters:
         - name: id
@@ -149,8 +149,8 @@ paths:
 
   /search:
     get:
-      summary: Recherche textuelle dans les notes
-      description: Filtre toutes les notes contenant le terme recherché de manière insensible à la casse dans le titre ou le contenu.
+      summary: Recherche avancée dans les notes
+      description: Effectue une recherche Full-Text native (via index GIN) dans PostgreSQL pour trouver les notes pertinentes.
       operationId: searchNotes
       parameters:
         - name: q
@@ -179,13 +179,19 @@ components:
       type: object
       required:
         - title
+        - content
       properties:
         title:
           type: string
           example: "Développement Go Modules"
         content:
           type: string
-          example: "Rappel sur go mod tidy et l outillage."
+          example: "Rappel sur go mod tidy et l'outillage."
+        tags:
+          type: array
+          items:
+            type: string
+          example: ["go", "backend"]
     NotePatchPayload:
       type: object
       properties:
@@ -195,6 +201,11 @@ components:
         content:
           type: string
           example: "Contenu partiel mis à jour"
+        tags:
+          type: array
+          items:
+            type: string
+          example: ["mise-a-jour"]
     Note:
       type: object
       properties:
@@ -207,7 +218,23 @@ components:
           example: "Développement Go Modules"
         content:
           type: string
-          example: "Rappel sur go mod tidy et l outillage."
+          example: "Rappel sur go mod tidy et l'outillage."
+        tags:
+          type: array
+          items:
+            type: string
+          example: ["go", "backend", "long-read"]
+        enrichment_status:
+          type: string
+          enum: [pending, done, failed]
+          example: "done"
+        summary:
+          type: string
+          nullable: true
+          example: "Résumé automatique de la note sur Go Modules."
+        score:
+          type: integer
+          example: 85
         created_at:
           type: string
           format: date-time

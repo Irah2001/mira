@@ -20,7 +20,7 @@ func NewJSONLStore(path string) *JSONLStore {
 }
 
 // Add ajoute une note à la fin du fichier.
-func (s *JSONLStore) Add(note Note) error {
+func (s *JSONLStore) Add(note *Note) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

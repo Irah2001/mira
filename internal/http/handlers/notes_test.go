@@ -29,11 +29,13 @@ func TestCreateNote_SuccessAnd400(t *testing.T) {
 	store, clean := setupTestStore(t)
 	defer clean()
 
-	handler := NewNoteHandler(store)
+	dummyEnricher := notes.NewEnrichmentService(nil, 10, 1)
+
+	handler := NewNoteHandler(store, dummyEnricher)
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/v1/notes", handler.Create)
 
-	// Cas 1 : Succès (201)
 	payload := []byte(`{"title":"Mon super Titre","content":"Mon contenu"}`)
 	req := httptest.NewRequest("POST", "/api/v1/notes", bytes.NewBuffer(payload))
 	rr := httptest.NewRecorder()
@@ -44,7 +46,6 @@ func TestCreateNote_SuccessAnd400(t *testing.T) {
 		t.Errorf("Attendu statut %d, obtenu %d", http.StatusCreated, rr.Code)
 	}
 
-	// Cas 2 : Mauvaise requête (400) - Titre manquant
 	badPayload := []byte(`{"content":"Pas de titre"}`)
 	reqBad := httptest.NewRequest("POST", "/api/v1/notes", bytes.NewBuffer(badPayload))
 	rrBad := httptest.NewRecorder()
@@ -60,11 +61,12 @@ func TestGetNote_NotFound(t *testing.T) {
 	store, clean := setupTestStore(t)
 	defer clean()
 
-	handler := NewNoteHandler(store)
+	dummyEnricher := notes.NewEnrichmentService(nil, 10, 1)
+	handler := NewNoteHandler(store, dummyEnricher)
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/notes/{id}", handler.Get)
 
-	// On cherche un ID inexistant généré aléatoirement
 	req := httptest.NewRequest("GET", "/api/v1/notes/1234567890", nil)
 	rr := httptest.NewRecorder()
 

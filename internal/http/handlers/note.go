@@ -10,11 +10,15 @@ import (
 )
 
 type NoteHandler struct {
-	store notes.NoteStore
+	store         notes.NoteStore
+	enrichService *notes.EnrichmentService
 }
 
-func NewNoteHandler(s notes.NoteStore) *NoteHandler {
-	return &NoteHandler{store: s}
+func NewNoteHandler(s notes.NoteStore, es *notes.EnrichmentService) *NoteHandler {
+	return &NoteHandler{
+		store:         s,
+		enrichService: es,
+	}
 }
 
 func (h *NoteHandler) Create(w http.ResponseWriter, r *http.Request) {
@@ -29,11 +33,17 @@ func (h *NoteHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	note := notes.NewNote(*payload.Title, *payload.Content)
+	note := notes.NewNote(
+		*payload.Title,
+		*payload.Content,
+		payload.Tags,
+	)
 	if err := h.store.Add(note); err != nil {
 		JSONError(w, http.StatusInternalServerError, "Erreur lors de l'écriture disque")
 		return
 	}
+
+	h.enrichService.Submit(note.ID)
 
 	JSON(w, http.StatusCreated, note, nil)
 }

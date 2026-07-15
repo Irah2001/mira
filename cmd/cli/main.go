@@ -1,29 +1,34 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"mira/internal/notes"
 	"mira/internal/search"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/joho/godotenv"
 )
 
 func main() {
-	homeDir, err := os.UserHomeDir()
+	godotenv.Load()
+
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		fmt.Println("Erreur: La variable DATABASE_URL n'est pas définie dans l'environnement ou le fichier .env")
+		os.Exit(1)
+	}
+
+	pool, err := pgxpool.New(context.Background(), dbURL)
 	if err != nil {
-		fmt.Println("Erreur : impossible de trouver le dossier utilisateur.")
+		fmt.Printf("Erreur : impossible de se connecter à la BDD: %v\n", err)
 		os.Exit(1)
 	}
+	defer pool.Close()
 
-	miraDir := filepath.Join(homeDir, ".mira")
-	if err := os.MkdirAll(miraDir, 0755); err != nil {
-		fmt.Printf("Erreur lors de la création du dossier %s: %v\n", miraDir, err)
-		os.Exit(1)
-	}
-
-	storePath := filepath.Join(miraDir, "notes.jsonl")
-	store := notes.NewJSONLStore(storePath)
+	store := notes.NewPostgresStore(pool)
 
 	if len(os.Args) < 2 {
 		printUsage()
@@ -42,12 +47,13 @@ func main() {
 		title := os.Args[2]
 		content := os.Args[3]
 
-		note := notes.NewNote(title, content)
+		note := notes.NewNote(title, content, []string{})
+
 		if err := store.Add(note); err != nil {
 			fmt.Printf("Erreur lors de la sauvegarde : %v\n", err)
 			os.Exit(1)
 		}
-		fmt.Println("✅ Note ajoutée avec succès.")
+		fmt.Println("Note ajoutée avec succès dans PostgreSQL.")
 
 	case "list":
 		recentNotes, err := store.List(10)

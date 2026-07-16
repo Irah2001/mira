@@ -1,3 +1,5 @@
+[![Go Mira CI](https://github.com/Irah2001/mira/actions/workflows/ci.yml/badge.svg)](https://github.com/Irah2001/mira/actions/workflows/ci.yml)
+
 # Mira — Outil de Mémoire Personnelle (Version 4.0)
 
 Mira est une base de connaissances locale et centralisée qui vous permet de stocker, lister, modifier et rechercher vos notes ou mémos personnels.
@@ -177,3 +179,6 @@ Configure l'accès via le fichier `.mcp.json` :
 - Claude Code : claude --mcp-config .mcp.json
 
 - Exemples : "Résume mes notes sur Go", "Affiche mes dernières notes".
+
+## 🎬 Démonstration vidéo
+[![Démonstration Mira](https://drive.google.com/file/d/12kHzhh4yVrW0J9yDTb7fvV6LEdj641b0/view?usp=sharing)](https://drive.google.com/file/d/12kHzhh4yVrW0J9yDTb7fvV6LEdj641b0/view?usp=sharing)

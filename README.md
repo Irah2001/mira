@@ -1,8 +1,8 @@
-# Mira — Outil de Mémoire Personnelle (Version 3.0)
+# Mira — Outil de Mémoire Personnelle (Version 4.0)
 
 Mira est une base de connaissances locale et centralisée qui vous permet de stocker, lister, modifier et rechercher vos notes ou mémos personnels.
 
-Cette version 3 (V3) marque une évolution architecturale majeure. Le stockage sur fichier a été remplacé par une base de données PostgreSQL sécurisée et conteneurisée via Docker. L'application introduit un pipeline d'enrichissement asynchrone ultra-rapide (Goroutines & Channels) et l'interface CLI a été refactorisée pour devenir un pur client HTTP garantissant le respect des règles métier de l'API.
+Cette version 4 marque l'aboutissement de l'architecture du projet avec l'intégration du standard **Model Context Protocol (MCP)**, permettant aux agents IA d'interagir de manière autonome avec votre mémoire. Le projet s'appuie sur une base PostgreSQL, un pipeline d'enrichissement asynchrone ultra-rapide (Goroutines & Channels) et un moteur de recherche hybride.
 
 ---
 
@@ -17,6 +17,8 @@ mira/
 │   │   └── main.go                 # Client HTTP en ligne de commande interrogeant l'API
 │   └── api/
 │       └── main.go                 # Serveur API REST connecté à PostgreSQL
+│   └── mira-mcp/
+│       └── main.go                 # Serveur MCP (Model Context Protocol) pour l'intégration avec LLMs
 ├── internal/
 │   ├── notes/
 │   │   ├── note.go                 # Modèles de domaine (avec données d'enrichissement)
@@ -35,6 +37,7 @@ mira/
 │   └── 003_search.sql              # Index GIN (Full-text) et HNSW (Vectoriel)
 ├── docker-compose.yml              # Configuration de la base de données (pgvector)
 ├── .env.example                    # Exemple de variables d'environnement (Identifiants BDD, Port)
+├── .mcp.json                       # Fiche de configuration pour Claude Code
 ├── go.mod
 └── README.md
 ```
@@ -79,7 +82,7 @@ L'accès en ligne de commande ne tape plus directement dans la base de données.
 Pour une utilisation plus rapide et ergonomique, compilez le projet afin de générer un fichier exécutable binaire autonome :
 
 ```bash
-# 1. Compiler le code source en un binaire nommé "mira"
+# Compiler le code source en un binaire nommé "mira"
 go build -o mira cmd/cli/main.go
 ```
 
@@ -98,7 +101,8 @@ go build -o mira cmd/cli/main.go
     ./mira search "mot-clé"
     ```
 
-### Enveloppe de Réponse JSON Stable
+## API REST & Spécifications
+
 Afin de garantir la stabilité des clients (Web, Mobile, Extension), toutes les réponses HTTP sans exception adoptent une structure JSON unifiée :
 
 ```json
@@ -131,3 +135,45 @@ La documentation OpenAPI est disponible à l'adresse suivante : [http://localhos
 Mira intègre désormais un moteur de recherche hybride directement dans PostgreSQL :
 - **Full-Text Search (GIN)** : Recherche par mots-clés optimisée pour le français (`tsvector`, `ts_rank`).
 - **Recherche Sémantique (HNSW)** : Recherche par similarité vectorielle grâce à l'extension `pgvector`. Lors de l'enrichissement, des embeddings (vecteurs) sont générés et stockés, permettant de classer les résultats selon un score hybride (70% texte / 30% sémantique).
+
+## Intégration Agents IA (Model Context Protocol - MCP)
+
+Mira expose ses données via le Model Context Protocol (MCP), permettant aux agents IA d'interagir avec tes notes (search, get, add, list).
+
+### ⚙️ Fonctionnement
+Le serveur MCP communique avec l'API HTTP via le transport stdio. Cette architecture garantit le déclenchement systématique des processus d'enrichissement asynchrone.
+
+### 🔍 Débogage (Sans abonnement)
+Utilise le MCP Inspector pour tester sans compte LLM :
+
+1- Lance l'API : 
+```bash
+go run cmd/api/main.go
+```
+
+2- Lance l'inspecteur :
+```bash
+MIRA_API_URL=http://localhost:8080/api/v1 npx @modelcontextprotocol/inspector go run cmd/mira-mcp/main.go
+```
+
+3- Ouvre l'URL affichée pour tester les outils manuellement.
+
+### 🚀 Usage Agent IA
+Configure l'accès via le fichier `.mcp.json` :
+```json
+{
+  "mcpServers": {
+    "mira-server": {
+      "command": "go",
+      "args": ["run", "cmd/mira-mcp/main.go"],
+      "env": {
+        "MIRA_API_URL": "http://localhost:8080/api/v1"
+      }
+    }
+  }
+}
+```
+
+- Claude Code : claude --mcp-config .mcp.json
+
+- Exemples : "Résume mes notes sur Go", "Affiche mes dernières notes".

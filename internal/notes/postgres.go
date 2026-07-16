@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/pgvector/pgvector-go"
 )
 
 type PostgresStore struct {
@@ -231,7 +232,7 @@ func (s *PostgresStore) Delete(id int64) error {
 	return nil
 }
 
-func (s *PostgresStore) UpdateEnrichmentStatus(id int64, status string, summary *string, score int, extraTags []string) error {
+func (s *PostgresStore) UpdateEnrichmentStatus(id int64, status string, summary *string, score int, extraTags []string, embedding []float32) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -243,9 +244,9 @@ func (s *PostgresStore) UpdateEnrichmentStatus(id int64, status string, summary 
 
 	_, err = tx.Exec(ctx,
 		`UPDATE notes 
-		 SET enrichment_status = $1, summary = $2, score = $3, updated_at = NOW() 
-		 WHERE id = $4`,
-		status, summary, score, id,
+		 SET enrichment_status = $1, summary = $2, score = $3, embedding = $4, updated_at = NOW() 
+		 WHERE id = $5`,
+		status, summary, score, pgvector.NewVector(embedding), id,
 	)
 	if err != nil {
 		return err
@@ -273,4 +274,53 @@ func (s *PostgresStore) UpdateEnrichmentStatus(id int64, status string, summary 
 	}
 
 	return tx.Commit(ctx)
+}
+
+func (s *PostgresStore) Search(query string) ([]Note, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	queryVector := []float32{0.5, 0.5, 0.5}
+
+	sqlQuery := `
+		SELECT n.id, n.title, n.content, n.enrichment_status, n.summary, n.score, n.created_at, n.updated_at,
+		       COALESCE(array_remove(array_agg(t.name), NULL), '{}') as tags
+		FROM notes n
+		LEFT JOIN note_tags nt ON n.id = nt.note_id
+		LEFT JOIN tags t ON nt.tag_id = t.id
+		
+		-- On filtre grossièrement par texte OU on garde tout pour trier par vecteur
+		WHERE n.search_vector @@ websearch_to_tsquery('french', $1) 
+		   OR n.embedding IS NOT NULL
+		
+		GROUP BY n.id, n.search_vector, n.embedding
+		
+		-- Le TRI HYBRIDE : 70% Textuel + 30% Sémantique
+		ORDER BY (
+			0.7 * ts_rank(n.search_vector, websearch_to_tsquery('french', $1)) +
+			0.3 * (1 - (n.embedding <=> $2::vector))
+		) DESC
+		LIMIT 20
+	`
+
+	rows, err := s.pool.Query(ctx, sqlQuery, query, pgvector.NewVector(queryVector))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var results []Note
+	for rows.Next() {
+		var note Note
+		err := rows.Scan(
+			&note.ID, &note.Title, &note.Content, &note.EnrichmentStatus, &note.Summary,
+			&note.Score, &note.CreatedAt, &note.UpdatedAt, &note.Tags,
+		)
+		if err != nil {
+			return nil, err
+		}
+		results = append(results, note)
+	}
+
+	return results, nil
 }

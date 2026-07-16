@@ -69,7 +69,7 @@ func (s *EnrichmentService) processJobWithTimeout(noteID int64, workerID int) {
 	if err != nil {
 		slog.Error("❌ Échec d'enrichissement", "note_id", noteID, "err", err, "worker_id", workerID)
 		// Écriture du statut 'failed' en BDD
-		_ = s.store.UpdateEnrichmentStatus(noteID, "failed", nil, 0, nil)
+		_ = s.store.UpdateEnrichmentStatus(noteID, "failed", nil, 0, nil, nil)
 		return
 	}
 
@@ -99,7 +99,8 @@ func (s *EnrichmentService) enrich(ctx context.Context, noteID int64) error {
 		discoveredTags = append(discoveredTags, "long-read")
 	}
 
-	err = s.store.UpdateEnrichmentStatus(noteID, "done", &summary, score, discoveredTags)
+	fakeEmbedding := []float32{rand.Float32(), rand.Float32(), rand.Float32()}
+	err = s.store.UpdateEnrichmentStatus(noteID, "done", &summary, score, discoveredTags, fakeEmbedding)
 	if err != nil {
 		return fmt.Errorf("impossible de sauvegarder l'enrichissement : %w", err)
 	}

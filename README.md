@@ -32,6 +32,7 @@ mira/
 ├── migrations/
 │   ├── 001_init.sql                # Script de création des tables relationnelles
 │   └── 002_enrichment.sql          # Ajout des champs de métadonnées d'enrichissement
+│   └── 003_search.sql              # Index GIN (Full-text) et HNSW (Vectoriel)
 ├── docker-compose.yml              # Configuration de la base de données (pgvector)
 ├── .env.example                    # Exemple de variables d'environnement (Identifiants BDD, Port)
 ├── go.mod
@@ -70,9 +71,17 @@ Afin de ne pas ralentir les requêtes de création de notes, Mira intègre un pi
 - **Sécurité & Context** : Chaque tâche dispose d'un timeout strict. Si l'enrichissement échoue ou prend trop de temps, le statut en base passe à `failed`. S'il réussit, il passe à `done` et la base est mise à jour avec les nouvelles données (`summary`, `score`, `tags`).
 
 
-## Utilisation de l'Interface CLI (Locale)
+## Utilisation de l'Interface CLI (Mode Client HTTP)
 
-L'accès en ligne de commande permet des interactions rapides en local sur votre machine.
+L'accès en ligne de commande ne tape plus directement dans la base de données. Il effectue des requêtes HTTP vers l'API (configurée via la variable `MIRA_API_URL` dans le `.env`), garantissant que chaque ajout déclenche le processus d'enrichissement.
+
+### Compilation (Recommandé)
+Pour une utilisation plus rapide et ergonomique, compilez le projet afin de générer un fichier exécutable binaire autonome :
+
+```bash
+# 1. Compiler le code source en un binaire nommé "mira"
+go build -o mira cmd/cli/main.go
+```
 
 1. Ajouter une note :
    ```bash
@@ -88,14 +97,6 @@ L'accès en ligne de commande permet des interactions rapides en local sur votre
     ```bash
     ./mira search "mot-clé"
     ```
-
-## Utilisation de l'API HTTP REST
-
-Le serveur API s'exécute par défaut sur le port :8080. Pour le lancer, utilisez la commande suivante :
-
-```bash
-go run cmd/api/main.go
-```
 
 ### Enveloppe de Réponse JSON Stable
 Afin de garantir la stabilité des clients (Web, Mobile, Extension), toutes les réponses HTTP sans exception adoptent une structure JSON unifiée :
@@ -117,8 +118,16 @@ Afin de garantir la stabilité des clients (Web, Mobile, Extension), toutes les 
 | POST    | api/v1/notes   | Crée une note (démarre l'enrichissement en fond) | `curl -X POST http://localhost:8080/api/v1/notes -H "Content-Type: application/json" -d '{"title":"Nouvelle Note", "content":"Contenu", "tags":["web"]}'` |
 | PUT     | api/v1/notes/{id} | Met à jour une note spécifique par ID | `curl -X PUT http://localhost:8080/api/v1/notes/1 -H "Content-Type: application/json" -d '{"title":"Titre mis à jour","content":"Contenu mis à jour"}'` |
 | DELETE  | api/v1/notes/{id} | Supprime une note spécifique par ID | `curl -X DELETE http://localhost:8080/api/v1/notes/1` |
-| GET     | api/v1/search | Recherche des notes par mot-clé | `curl http://localhost:8080/api/v1/search\?q=modules` |
+| GET     | api/v1/search | Recherche hybride (Full-Text + Vectorielle) via PostgreSQL | `curl http://localhost:8080/api/v1/search\?q=modules` |
 
 ### Documentation OpenAPI/Swagger
 
 La documentation OpenAPI est disponible à l'adresse suivante : [http://localhost:8080/docs/](http://localhost:8080/docs/)
+
+---
+
+## 🔍 Recherche Avancée (Hybride)
+
+Mira intègre désormais un moteur de recherche hybride directement dans PostgreSQL :
+- **Full-Text Search (GIN)** : Recherche par mots-clés optimisée pour le français (`tsvector`, `ts_rank`).
+- **Recherche Sémantique (HNSW)** : Recherche par similarité vectorielle grâce à l'extension `pgvector`. Lors de l'enrichissement, des embeddings (vecteurs) sont générés et stockés, permettant de classer les résultats selon un score hybride (70% texte / 30% sémantique).

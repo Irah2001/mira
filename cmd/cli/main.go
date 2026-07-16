@@ -1,34 +1,31 @@
 package main
 
 import (
-	"context"
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
+	"time"
 
 	"mira/internal/notes"
-	"mira/internal/search"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 )
+
+type APIResponse struct {
+	Success bool            `json:"success"`
+	Data    json.RawMessage `json:"data"`
+	Error   any             `json:"error"`
+}
 
 func main() {
 	godotenv.Load()
 
-	dbURL := os.Getenv("DATABASE_URL")
-	if dbURL == "" {
-		fmt.Println("Erreur: La variable DATABASE_URL n'est pas définie dans l'environnement ou le fichier .env")
-		os.Exit(1)
+	apiURL := os.Getenv("MIRA_API_URL")
+	if apiURL == "" {
+		apiURL = "http://localhost:8080/api/v1"
 	}
-
-	pool, err := pgxpool.New(context.Background(), dbURL)
-	if err != nil {
-		fmt.Printf("Erreur : impossible de se connecter à la BDD: %v\n", err)
-		os.Exit(1)
-	}
-	defer pool.Close()
-
-	store := notes.NewPostgresStore(pool)
 
 	if len(os.Args) < 2 {
 		printUsage()
@@ -37,6 +34,8 @@ func main() {
 
 	command := os.Args[1]
 
+	client := &http.Client{Timeout: 5 * time.Second}
+
 	switch command {
 	case "add":
 		if len(os.Args) < 4 {
@@ -44,32 +43,50 @@ func main() {
 			printUsage()
 			os.Exit(1)
 		}
-		title := os.Args[2]
-		content := os.Args[3]
 
-		note := notes.NewNote(title, content, []string{})
+		payload := map[string]any{
+			"title":   os.Args[2],
+			"content": os.Args[3],
+			"tags":    []string{"cli"},
+		}
+		body, _ := json.Marshal(payload)
 
-		if err := store.Add(note); err != nil {
-			fmt.Printf("Erreur lors de la sauvegarde : %v\n", err)
+		resp, err := client.Post(apiURL+"/notes", "application/json", bytes.NewBuffer(body))
+		if err != nil || resp.StatusCode != http.StatusCreated {
+			fmt.Printf("❌ Erreur lors de l'appel à l'API: %v\n(Vérifie que le serveur est bien lancé sur %s !)\n", err, apiURL)
 			os.Exit(1)
 		}
-		fmt.Println("Note ajoutée avec succès dans PostgreSQL.")
+		fmt.Println("✅ Note envoyée à l'API avec succès. (L'enrichissement démarre en arrière-plan !)")
 
 	case "list":
-		recentNotes, err := store.List(10)
+		resp, err := client.Get(apiURL + "/notes?limit=10")
 		if err != nil {
-			fmt.Printf("Erreur lors de la lecture : %v\n", err)
+			fmt.Printf("❌ Impossible de contacter l'API sur %s\n", apiURL)
 			os.Exit(1)
 		}
+		defer resp.Body.Close()
 
-		if len(recentNotes) == 0 {
+		var result APIResponse
+		json.NewDecoder(resp.Body).Decode(&result)
+
+		var noteList []notes.Note
+		json.Unmarshal(result.Data, &noteList)
+
+		if len(noteList) == 0 {
 			fmt.Println("Aucune note pour le moment.")
 			return
 		}
 
 		fmt.Println("📝 Vos 10 dernières notes :")
-		for _, n := range recentNotes {
-			fmt.Printf("\n[%s] %s\n> %s\n", n.CreatedAt.Format("2006-01-02 15:04"), n.Title, n.Content)
+		for _, n := range noteList {
+			status := "⏳"
+			switch n.EnrichmentStatus {
+			case "done":
+				status = "✅"
+			case "failed":
+				status = "❌"
+			}
+			fmt.Printf("\n[%s] %s %s (Score: %d)\n> %s\n", n.CreatedAt.Format("2006-01-02 15:04"), status, n.Title, n.Score, n.Content)
 		}
 
 	case "search":
@@ -79,21 +96,27 @@ func main() {
 		}
 		query := os.Args[2]
 
-		allNotes, err := store.GetAll()
+		resp, err := client.Get(apiURL + "/search?q=" + query)
 		if err != nil {
-			fmt.Printf("Erreur lors de la lecture : %v\n", err)
+			fmt.Printf("❌ Impossible de contacter l'API sur %s\n", apiURL)
 			os.Exit(1)
 		}
+		defer resp.Body.Close()
 
-		results := search.Search(allNotes, query)
-		if len(results) == 0 {
+		var result APIResponse
+		json.NewDecoder(resp.Body).Decode(&result)
+
+		var searchResults []notes.Note
+		json.Unmarshal(result.Data, &searchResults)
+
+		if len(searchResults) == 0 {
 			fmt.Printf("Aucun résultat pour la recherche : %q\n", query)
 			return
 		}
 
-		fmt.Printf("🔍 Résultats de recherche pour %q (%d trouvé(s)) :\n", query, len(results))
-		for _, n := range results {
-			fmt.Printf("\n- %s\n  %s\n", n.Title, n.Content)
+		fmt.Printf("🔍 Résultats de recherche pour %q (%d trouvé(s)) :\n", query, len(searchResults))
+		for _, n := range searchResults {
+			fmt.Printf("\n- %s (Score pertinence: %d)\n  %s\n", n.Title, n.Score, n.Content)
 		}
 
 	default:
@@ -104,8 +127,8 @@ func main() {
 }
 
 func printUsage() {
-	fmt.Println("\nUtilisation de mira :")
-	fmt.Println("  mira add \"titre\" \"contenu\"   : Ajoute une nouvelle note")
-	fmt.Println("  mira list                    : Affiche les 10 dernières notes")
-	fmt.Println("  mira search <texte>          : Recherche dans le titre et le contenu")
+	fmt.Println("\nUtilisation de mira (Mode API Client) :")
+	fmt.Println("  mira add \"titre\" \"contenu\"   : Ajoute une nouvelle note via l'API")
+	fmt.Println("  mira list                    : Affiche les 10 dernières notes via l'API")
+	fmt.Println("  mira search <texte>          : Recherche avancée via l'API")
 }
